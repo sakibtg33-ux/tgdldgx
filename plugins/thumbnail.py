@@ -34,7 +34,6 @@ from plugins.functions.forcesub import handle_force_subscribe
 from plugins.database.database import db
 from plugins.config import Config
 from plugins.database.database import db
-from plugins.settings.settings import *
 
 
 @Client.on_message(filters.photo)
