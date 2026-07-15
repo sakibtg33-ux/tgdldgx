@@ -1,80 +1,110 @@
-# (c) @AbirHasan2005 | Modified for tgdldgx
-
-import datetime
-import motor.motor_asyncio
-
-# Config ইম্পোর্ট – যদি plugins-এ থাকে, তাহলে সেখান থেকে, নাহলে root থেকে
-try:
-    from plugins.config import Config
-except ImportError:
-    from config import Config
+# ©️ Tg @yeah_new | YEAR-NEW | @NT_BOT_CHANNEL
 
 
-class Database:
-    def __init__(self, uri, database_name):
-        self._client = motor.motor_asyncio.AsyncIOMotorClient(uri)
-        self.db = self._client[database_name]
-        self.col = self.db.users
 
-    def new_user(self, id):
-        return dict(
-            id=id,
-            join_date=datetime.date.today().isoformat(),
-            apply_caption=True,
-            upload_as_doc=False,
-            thumbnail=None,
-            caption=None
+
+import traceback, datetime, asyncio, string, random, time, os, aiofiles, aiofiles.os
+from pyrogram import filters
+from pyrogram import Client
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
+from plugins.database.database import db
+from plugins.config import Config
+broadcast_ids = {}
+
+async def send_msg(user_id, message):
+    try:
+        await message.copy(chat_id=user_id)
+        return 200, None
+    except FloodWait as e:
+        await asyncio.sleep(e.x)
+        return send_msg(user_id, message)
+    except InputUserDeactivated:
+        return 400, f"{user_id} : deactivated\n"
+    except UserIsBlocked:
+        return 400, f"{user_id} : blocked the bot\n"
+    except PeerIdInvalid:
+        return 400, f"{user_id} : user id invalid\n"
+    except Exception as e:
+        return 500, f"{user_id} : {traceback.format_exc()}\n"
+        
+
+@Client.on_message(filters.private & filters.command('broadcast') & filters.reply)
+async def broadcast_(c, m):
+    if m.from_user.id != Config.OWNER_ID:
+        return
+    all_users = await db.get_all_users()
+    
+    broadcast_msg = m.reply_to_message
+    
+    while True:
+        broadcast_id = ''.join([random.choice(string.ascii_letters) for i in range(3)])
+        if not broadcast_ids.get(broadcast_id):
+            break
+    
+    out = await m.reply_text(
+        text = f"You will be notified with log file when all the users are notified."
+    )
+    start_time = time.time()
+    total_users = await db.total_users_count()
+    done = 0
+    failed = 0
+    success = 0
+    
+    broadcast_ids[broadcast_id] = dict(
+        total = total_users,
+        current = done,
+        failed = failed,
+        success = success
+    )
+    
+    async with aiofiles.open('broadcast.txt', 'w') as broadcast_log_file:
+        async for user in all_users:
+            
+            sts, msg = await send_msg(
+                user_id = int(user['id']),
+                message = broadcast_msg
+            )
+            if msg is not None:
+                await broadcast_log_file.write(msg)
+            
+            if sts == 200:
+                success += 1
+            else:
+                failed += 1
+            
+            if sts == 400:
+                await db.delete_user(user['id'])
+            
+            done += 1
+            if broadcast_ids.get(broadcast_id) is None:
+                break
+            else:
+                broadcast_ids[broadcast_id].update(
+                    dict(
+                        current = done,
+                        failed = failed,
+                        success = success
+                    )
+                )
+    if broadcast_ids.get(broadcast_id):
+        broadcast_ids.pop(broadcast_id)
+    completed_in = datetime.timedelta(seconds=int(time.time()-start_time))
+    
+    await asyncio.sleep(5)
+    
+    await out.delete()
+    
+    if failed == 0:
+        await m.reply_text(
+            text=f"broadcast completed in `{completed_in}`\n\nTotal users {total_users}.\nTotal done {done}, {success} success and {failed} failed.",
+            quote=True
         )
-
-    async def add_user(self, id):
-        user = self.new_user(id)
-        await self.col.insert_one(user)
-
-    async def is_user_exist(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return bool(user)
-
-    async def total_users_count(self):
-        count = await self.col.count_documents({})
-        return count
-
-    async def get_all_users(self):
-        return self.col.find({})
-
-    async def delete_user(self, user_id):
-        await self.col.delete_many({'id': int(user_id)})
-
-    async def set_apply_caption(self, id, apply_caption):
-        await self.col.update_one({'id': id}, {'$set': {'apply_caption': apply_caption}})
-
-    async def get_apply_caption(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return user.get('apply_caption', True)
-
-    async def set_upload_as_doc(self, id, upload_as_doc):
-        await self.col.update_one({'id': id}, {'$set': {'upload_as_doc': upload_as_doc}})
-
-    async def get_upload_as_doc(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return user.get('upload_as_doc', False)
-
-    async def set_thumbnail(self, id, thumbnail):
-        await self.col.update_one({'id': id}, {'$set': {'thumbnail': thumbnail}})
-
-    async def get_thumbnail(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return user.get('thumbnail', None)
-
-    async def set_caption(self, id, caption):
-        await self.col.update_one({'id': id}, {'$set': {'caption': caption}})
-
-    async def get_caption(self, id):
-        user = await self.col.find_one({'id': int(id)})
-        return user.get('caption', None)
-
-    async def get_user_data(self, id) -> dict:
-        user = await self.col.find_one({'id': int(id)})
-        return user or None
-
-
-db = Database(Config.DATABASE_URL, "UploadLinkToFileBot")
+    else:
+        await m.reply_document(
+            document='broadcast.txt',
+            caption=f"broadcast completed in `{completed_in}`\n\nTotal users {total_users}.\nTotal done {done}, {success} success and {failed} failed.",
+            quote=True
+        )
+    
+    await aiofiles.os.remove('broadcast.txt')
