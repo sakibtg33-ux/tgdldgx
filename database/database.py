@@ -1,8 +1,15 @@
-# (c) @AbirHasan2005
+# (c) @AbirHasan2005 | Modified for tgdldgx
 
 import datetime
 import motor.motor_asyncio
-from plugins.config import Config
+
+# যদি Config root-এর plugins ফোল্ডারে থাকে, তাহলে এই ইম্পোর্ট ঠিক
+# কিন্তু যদি কোনো সমস্যা হয়, তবে নিচের বিকল্প পদ্ধতি ব্যবহার করুন
+try:
+    from plugins.config import Config
+except ImportError:
+    # যদি plugins.config না পাওয়া যায়, তাহলে সরাসরি config.py থেকে ইম্পোর্ট করুন (যদি root-এ থাকে)
+    from config import Config
 
 
 class Database:
@@ -72,4 +79,5 @@ class Database:
         return user or None
 
 
+# ডাটাবেস অবজেক্ট তৈরি করা
 db = Database(Config.DATABASE_URL, "UploadLinkToFileBot")
